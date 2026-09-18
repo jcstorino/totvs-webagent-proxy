@@ -3,6 +3,9 @@ import Security
 import Darwin
 import Network
 
+@_silgen_name("SecIdentityCreate")
+func createSecIdentity(_ allocator: CFAllocator?, _ certificate: SecCertificate, _ privateKey: SecKey) -> SecIdentity?
+
 let listenPort: UInt16 = 21021
 let agentPort: UInt16 = 21022
 let tlsPort: UInt16 = 21023
@@ -140,7 +143,7 @@ func tlsIdentity() -> SecIdentity? {
     guard let certificateData = pemData(certPath), let keyData = pemData(keyPath), let certificate = SecCertificateCreateWithData(nil, certificateData as CFData) else { return nil }
     let attributes = [kSecAttrKeyType as String: kSecAttrKeyTypeRSA, kSecAttrKeyClass as String: kSecAttrKeyClassPrivate] as CFDictionary
     guard let key = SecKeyCreateWithData(keyData as CFData, attributes, nil) else { return nil }
-    return SecIdentityCreate(nil, certificate, key)
+    return createSecIdentity(nil, certificate, key)
 }
 
 func sendAll(_ fd: Int32, _ data: UnsafeRawPointer, _ length: Int) -> Bool {
