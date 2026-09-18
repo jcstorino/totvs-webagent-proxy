@@ -1,0 +1,30 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Define versão da release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: sed -i '' "s/let proxyVersion = \".*\"/let proxyVersion = \"${GITHUB_REF_NAME#v}\"/" Sources/WebAgentProxy/main.swift
+
+      - name: Build Universal Binary
+        run: ./scripts/build.sh
+
+      - name: Publicar release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/totvs-webagent-proxy --title "$GITHUB_REF_NAME" --generate-notes

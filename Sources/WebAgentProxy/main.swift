@@ -11,6 +11,7 @@ let agentPath = "/Applications/web-agent.app/Contents/MacOS/web-agent"
 let certPath = "/Applications/web-agent.app/Contents/MacOS/totvs_certificate.crt"
 let keyPath = "/Applications/web-agent.app/Contents/MacOS/totvs_certificate_key.pem"
 let logPath = NSHomeDirectory() + "/Library/Logs/totvs-webagent-proxy.log"
+let proxyVersion = "0.1.0"
 
 func log(_ message: String) {
     let line = "\(ISO8601DateFormatter().string(from: Date())) [proxy] \(message)\n"
@@ -61,7 +62,7 @@ case "log":
     tail.waitUntilExit()
     exit(tail.terminationStatus)
 case "version", "--version", "-v":
-    print("totvs-webagent-proxy 0.1.0")
+    print("totvs-webagent-proxy \(proxyVersion)")
     exit(0)
 case "help", "--help", "-h":
     printHelp()

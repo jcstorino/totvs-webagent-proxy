@@ -66,6 +66,17 @@ Para remover:
 ./scripts/uninstall.sh
 ```
 
+## Releases automáticas
+
+Todo push na `main` executa o build de validação no GitHub Actions. Para publicar uma versão, envie uma tag semântica iniciada por `v`:
+
+```bash
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+O GitHub Actions gera o Universal Binary, cria a Release e anexa `totvs-webagent-proxy`. A versão apresentada por `totvs-webagent-proxy version` no binário publicado será `0.1.1`.
+
 ## Validação realizada
 
 - Safari com WSS;
