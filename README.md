@@ -9,6 +9,14 @@ Mantenha a porta configurada no Protheus/WebAgent em `21021`. O proxy aceita WS 
 - macOS 13 ou superior;
 - TOTVS WebAgent 1.1.1 ou superior instalado em `/Applications/web-agent.app`.
 
+Para compilar a partir do código-fonte, instale também o Xcode Command Line Tools:
+
+```bash
+xcode-select --install
+```
+
+Quem instalar o binário publicado em uma Release não precisa do Command Line Tools.
+
 A instalação do WebAgent 1.1.1 pode não incluir os certificados necessários. Obtenha os arquivos abaixo e adicione-os nesta pasta da instalação local:
 
 ```text
