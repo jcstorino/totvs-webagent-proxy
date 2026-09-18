@@ -1,0 +1,7 @@
+.build/
+dist/
+*.xcworkspace
+xcuserdata/
+totvs_certificate.crt
+totvs_certificate_key.pem
+totvs_certificate_CA.crt
