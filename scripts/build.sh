@@ -9,6 +9,7 @@ else
   export DEVELOPER_DIR=/Library/Developer/CommandLineTools
 fi
 swift build -c release --arch arm64 --arch x86_64
+BIN_DIR="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
 mkdir -p dist
-cp .build/release/totvs-webagent-proxy dist/totvs-webagent-proxy
+cp "$BIN_DIR/totvs-webagent-proxy" dist/totvs-webagent-proxy
 file dist/totvs-webagent-proxy
