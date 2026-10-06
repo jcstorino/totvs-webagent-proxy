@@ -231,9 +231,33 @@ func connectUpstream() -> Int32? {
     return upstream
 }
 
+func sendTLS(_ connection: NWConnection, _ content: Data?, final: Bool = false) -> Bool {
+    let completed = DispatchSemaphore(value: 0)
+    var succeeded = false
+    connection.send(
+        content: content,
+        contentContext: final ? .finalMessage : .defaultMessage,
+        isComplete: true,
+        completion: .contentProcessed { error in
+            if let error {
+                log("Erro TLS: \(error)")
+            } else {
+                succeeded = true
+            }
+            completed.signal()
+        }
+    )
+    completed.wait()
+    return succeeded
+}
+
 func receiveTLS(_ connection: NWConnection, _ upstream: Int32) {
     connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { content, _, complete, error in
-        if let content, !content.isEmpty { _ = content.withUnsafeBytes { sendAll(upstream, $0.baseAddress!, content.count) } }
+        if let content, !content.isEmpty,
+           !content.withUnsafeBytes({ sendAll(upstream, $0.baseAddress!, content.count) }) {
+            shutdown(upstream, SHUT_WR)
+            return
+        }
         if complete || error != nil { shutdown(upstream, SHUT_WR); return }
         receiveTLS(connection, upstream)
     }
@@ -253,10 +277,10 @@ func handleTLSConnection(_ connection: NWConnection) {
                 while true {
                     let count = recv(socket, &buffer, buffer.count, 0)
                     if count <= 0 { break }
-                    connection.send(content: Data(buffer[0..<count]), completion: .contentProcessed { error in if let error { log("Erro TLS: \(error)") } })
+                    if !sendTLS(connection, Data(buffer[0..<count])) { break }
                 }
                 close(socket)
-                connection.cancel()
+                _ = sendTLS(connection, nil, final: true)
             }
         case .failed(let error): log("Erro TLS: \(error)")
         default: break
