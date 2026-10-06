@@ -108,6 +108,11 @@ final class AgentManager {
             finishStartup(true)
             return
         }
+        if process?.isRunning == true {
+            lock.unlock()
+            waitForPort()
+            return
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: agentPath)
         process.arguments = ["--tray", "--port", String(agentPort), "--locallog", "1"]
@@ -117,6 +122,12 @@ final class AgentManager {
         do {
             try process.run()
             self.process = process
+            process.terminationHandler = { [weak self] terminated in
+                self?.lock.lock()
+                if self?.process === terminated { self?.process = nil }
+                self?.lock.unlock()
+                log("WebAgent encerrou (PID \(terminated.processIdentifier), código \(terminated.terminationStatus))")
+            }
             log("WebAgent iniciado (PID \(process.processIdentifier))")
             lock.unlock()
         } catch {
@@ -124,6 +135,10 @@ final class AgentManager {
             finishStartup(false)
             return
         }
+        waitForPort()
+    }
+
+    private func waitForPort() {
         for _ in 0..<100 {
             if portOpen(agentPort) {
                 lock.lock()
