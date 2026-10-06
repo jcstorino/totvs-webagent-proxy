@@ -90,7 +90,7 @@ final class AgentManager {
 
     func ensure(_ completion: @escaping (Bool) -> Void) {
         lock.lock()
-        if process?.isRunning == true || portInUse(agentPort) {
+        if process?.isRunning == true {
             lock.unlock()
             completion(true)
             return
@@ -107,7 +107,7 @@ final class AgentManager {
 
     private func startAndWait() {
         lock.lock()
-        if process?.isRunning == true || portInUse(agentPort) {
+        if process?.isRunning == true {
             finishStartup(true)
             return
         }
@@ -151,7 +151,7 @@ final class AgentManager {
             usleep(50_000)
         }
         lock.lock()
-        let available = process?.isRunning == true || portInUse(agentPort)
+        let available = process?.isRunning == true
         log(available ? "WebAgent disponível na \(agentPort)" : "WebAgent não respondeu na porta \(agentPort)")
         finishStartup(available)
     }
