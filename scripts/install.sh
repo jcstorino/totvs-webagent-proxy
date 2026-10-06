@@ -17,6 +17,27 @@ for _ in {1..20}; do
   fi
   sleep 0.25
 done
-launchctl bootstrap "gui/$(id -u)" "$TARGET_PLIST"
+
+BOOTSTRAPPED=0
+for _ in {1..10}; do
+  if launchctl bootstrap "gui/$(id -u)" "$TARGET_PLIST" 2>/dev/null; then
+    BOOTSTRAPPED=1
+    break
+  fi
+
+  # Em alguns macOS o bootstrap retorna EIO mesmo após o launchd aceitar o plist.
+  if launchctl print "$SERVICE" >/dev/null 2>&1; then
+    BOOTSTRAPPED=1
+    break
+  fi
+
+  sleep 0.5
+done
+
+[ "$BOOTSTRAPPED" -eq 1 ] || {
+  echo "Não foi possível carregar o LaunchAgent: $TARGET_PLIST"
+  exit 1
+}
+
 launchctl kickstart -k "$SERVICE"
 echo "Instalado e iniciado. Log: $HOME/Library/Logs/totvs-webagent-proxy.log"
