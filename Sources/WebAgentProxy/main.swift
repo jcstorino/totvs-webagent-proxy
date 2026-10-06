@@ -82,11 +82,32 @@ final class AgentManager {
     private var process: Process?
     private var active = 0
     private var generation = 0
+    private var starting = false
+    private var waiting: [(Bool) -> Void] = []
 
     func ensure(_ completion: @escaping (Bool) -> Void) {
         lock.lock()
-        if portOpen(agentPort) { lock.unlock(); completion(true); return }
-        if process?.isRunning == true { lock.unlock(); wait(completion); return }
+        if portOpen(agentPort) {
+            lock.unlock()
+            completion(true)
+            return
+        }
+        waiting.append(completion)
+        guard !starting else {
+            lock.unlock()
+            return
+        }
+        starting = true
+        lock.unlock()
+        DispatchQueue.global().async { [weak self] in self?.startAndWait() }
+    }
+
+    private func startAndWait() {
+        lock.lock()
+        if portOpen(agentPort) {
+            finishStartup(true)
+            return
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: agentPath)
         process.arguments = ["--tray", "--port", String(agentPort), "--locallog", "1"]
@@ -98,22 +119,31 @@ final class AgentManager {
             self.process = process
             log("WebAgent iniciado (PID \(process.processIdentifier))")
             lock.unlock()
-            wait(completion)
         } catch {
-            lock.unlock()
             log("Falha ao iniciar WebAgent: \(error)")
-            completion(false)
+            finishStartup(false)
+            return
         }
+        for _ in 0..<100 {
+            if portOpen(agentPort) {
+                lock.lock()
+                log("WebAgent disponível na \(agentPort)")
+                finishStartup(true)
+                return
+            }
+            usleep(50_000)
+        }
+        lock.lock()
+        log("WebAgent não respondeu na porta \(agentPort)")
+        finishStartup(false)
     }
 
-    private func wait(_ completion: @escaping (Bool) -> Void) {
-        DispatchQueue.global().async {
-            for _ in 0..<100 {
-                if portOpen(agentPort) { completion(true); return }
-                usleep(50_000)
-            }
-            completion(false)
-        }
+    private func finishStartup(_ available: Bool) {
+        let completions = waiting
+        waiting.removeAll()
+        starting = false
+        lock.unlock()
+        completions.forEach { $0(available) }
     }
 
     func opened() { lock.lock(); active += 1; generation += 1; let count = active; lock.unlock(); log("Conexões ativas: \(count)") }
