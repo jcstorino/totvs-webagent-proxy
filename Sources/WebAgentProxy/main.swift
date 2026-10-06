@@ -14,6 +14,7 @@ let agentPath = "/Applications/web-agent.app/Contents/MacOS/web-agent"
 let certPath = "/Applications/web-agent.app/Contents/MacOS/totvs_certificate.crt"
 let keyPath = "/Applications/web-agent.app/Contents/MacOS/totvs_certificate_key.pem"
 let logPath = NSHomeDirectory() + "/Library/Logs/totvs-webagent-proxy.log"
+let webAgentLogPath = NSHomeDirectory() + "/Library/Logs/totvs-webagent.log"
 let proxyVersion = "0.1.0"
 
 func log(_ message: String) {
@@ -117,8 +118,12 @@ final class AgentManager {
         process.executableURL = URL(fileURLWithPath: agentPath)
         process.arguments = ["--tray", "--port", String(agentPort), "--locallog", "1"]
         process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        FileManager.default.createFile(atPath: webAgentLogPath, contents: nil)
+        if let output = FileHandle(forWritingAtPath: webAgentLogPath) {
+            output.seekToEndOfFile()
+            process.standardOutput = output
+            process.standardError = output
+        }
         do {
             try process.run()
             self.process = process
@@ -129,6 +134,7 @@ final class AgentManager {
                 log("WebAgent encerrou (PID \(terminated.processIdentifier), código \(terminated.terminationStatus))")
             }
             log("WebAgent iniciado (PID \(process.processIdentifier))")
+            log("Log do WebAgent: \(webAgentLogPath)")
             lock.unlock()
         } catch {
             log("Falha ao iniciar WebAgent: \(error)")
