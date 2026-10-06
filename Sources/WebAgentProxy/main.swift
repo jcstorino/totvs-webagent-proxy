@@ -23,18 +23,20 @@ func log(_ message: String) {
     if let handle = FileHandle(forWritingAtPath: logPath) { handle.seekToEndOfFile(); handle.write(line.data(using: .utf8)!); handle.closeFile() }
 }
 
-func portOpen(_ port: UInt16) -> Bool {
+func portInUse(_ port: UInt16) -> Bool {
     let fd = socket(AF_INET, SOCK_STREAM, 0)
     guard fd >= 0 else { return false }
     defer { close(fd) }
-    var timeout = timeval(tv_sec: 0, tv_usec: 200_000)
-    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
     var address = sockaddr_in()
     address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
     address.sin_family = sa_family_t(AF_INET)
     address.sin_port = port.bigEndian
     inet_pton(AF_INET, "127.0.0.1", &address.sin_addr)
-    return withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0 } }
+    return withUnsafePointer(to: &address) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) != 0
+        }
+    }
 }
 
 func printHelp() {
@@ -52,9 +54,9 @@ Comandos:
 
 switch CommandLine.arguments.dropFirst().first {
 case "status":
-    let proxyRunning = portOpen(listenPort)
+    let proxyRunning = portInUse(listenPort)
     print("Proxy 21021: \(proxyRunning ? "running" : "stopped")")
-    print("WebAgent 21022: \(portOpen(agentPort) ? "running" : "stopped")")
+    print("WebAgent 21022: \(portInUse(agentPort) ? "running" : "stopped")")
     exit(proxyRunning ? 0 : 1)
 case "log":
     let tail = Process()
@@ -88,7 +90,7 @@ final class AgentManager {
 
     func ensure(_ completion: @escaping (Bool) -> Void) {
         lock.lock()
-        if portOpen(agentPort) {
+        if process?.isRunning == true || portInUse(agentPort) {
             lock.unlock()
             completion(true)
             return
@@ -105,7 +107,7 @@ final class AgentManager {
 
     private func startAndWait() {
         lock.lock()
-        if portOpen(agentPort) {
+        if process?.isRunning == true || portInUse(agentPort) {
             finishStartup(true)
             return
         }
@@ -145,18 +147,13 @@ final class AgentManager {
     }
 
     private func waitForPort() {
-        for _ in 0..<100 {
-            if portOpen(agentPort) {
-                lock.lock()
-                log("WebAgent disponível na \(agentPort)")
-                finishStartup(true)
-                return
-            }
+        for _ in 0..<20 {
             usleep(50_000)
         }
         lock.lock()
-        log("WebAgent não respondeu na porta \(agentPort)")
-        finishStartup(false)
+        let available = process?.isRunning == true || portInUse(agentPort)
+        log(available ? "WebAgent disponível na \(agentPort)" : "WebAgent não respondeu na porta \(agentPort)")
+        finishStartup(available)
     }
 
     private func finishStartup(_ available: Bool) {
