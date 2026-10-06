@@ -15,12 +15,26 @@ let certPath = "/Applications/web-agent.app/Contents/MacOS/totvs_certificate.crt
 let keyPath = "/Applications/web-agent.app/Contents/MacOS/totvs_certificate_key.pem"
 let logPath = NSHomeDirectory() + "/Library/Logs/totvs-webagent-proxy.log"
 let webAgentLogPath = NSHomeDirectory() + "/Library/Logs/totvs-webagent.log"
+let wireLogPath = NSHomeDirectory() + "/Library/Logs/totvs-webagent-wire.log"
 let proxyVersion = "0.1.0"
+let wireLogLock = NSLock()
 
 func log(_ message: String) {
     let line = "\(ISO8601DateFormatter().string(from: Date())) [proxy] \(message)\n"
     FileHandle.standardOutput.write(line.data(using: .utf8)!)
     if let handle = FileHandle(forWritingAtPath: logPath) { handle.seekToEndOfFile(); handle.write(line.data(using: .utf8)!); handle.closeFile() }
+}
+
+func logWire(_ connectionID: String, _ direction: String, _ event: String, data: Data? = nil) {
+    let payload = data?.base64EncodedString() ?? "-"
+    let length = data?.count ?? 0
+    let line = "\(ISO8601DateFormatter().string(from: Date())) [wire \(connectionID)] \(direction) \(event) bytes=\(length) base64=\(payload)\n"
+    wireLogLock.lock()
+    defer { wireLogLock.unlock() }
+    guard let handle = FileHandle(forWritingAtPath: wireLogPath) else { return }
+    handle.seekToEndOfFile()
+    handle.write(line.data(using: .utf8)!)
+    handle.closeFile()
 }
 
 func portInUse(_ port: UInt16) -> Bool {
@@ -228,34 +242,62 @@ func connectUpstream() -> Int32? {
     return upstream
 }
 
-func receiveTLS(_ connection: NWConnection, _ upstream: Int32) {
+func receiveTLS(_ connection: NWConnection, _ upstream: Int32, _ connectionID: String) {
     connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { content, _, complete, error in
-        if let content, !content.isEmpty { _ = content.withUnsafeBytes { sendAll(upstream, $0.baseAddress!, content.count) } }
-        if complete || error != nil { shutdown(upstream, SHUT_WR); return }
-        receiveTLS(connection, upstream)
+        if let content, !content.isEmpty {
+            logWire(connectionID, "client->WebAgent", "data", data: content)
+            if !content.withUnsafeBytes({ sendAll(upstream, $0.baseAddress!, content.count) }) {
+                logWire(connectionID, "client->WebAgent", "upstream-write-failed")
+                shutdown(upstream, SHUT_WR)
+                return
+            }
+        }
+        if complete || error != nil {
+            logWire(connectionID, "client->WebAgent", "end complete=\(complete) error=\(String(describing: error))")
+            shutdown(upstream, SHUT_WR)
+            return
+        }
+        receiveTLS(connection, upstream, connectionID)
     }
 }
 
 func handleTLSConnection(_ connection: NWConnection) {
+    let connectionID = String(UUID().uuidString.prefix(8))
     var upstream: Int32 = -1
+    logWire(connectionID, "proxy", "accepted")
     connection.stateUpdateHandler = { state in
         switch state {
         case .ready:
             log("Handshake TLS concluído")
+            logWire(connectionID, "tls", "handshake-complete")
             guard upstream < 0, let socket = connectUpstream() else { connection.cancel(); return }
             upstream = socket
-            receiveTLS(connection, socket)
+            receiveTLS(connection, socket, connectionID)
             DispatchQueue.global().async {
                 var buffer = [UInt8](repeating: 0, count: 65_536)
+                var receiveResult: Int32 = 0
                 while true {
                     let count = recv(socket, &buffer, buffer.count, 0)
-                    if count <= 0 { break }
-                    connection.send(content: Data(buffer[0..<count]), completion: .contentProcessed { error in if let error { log("Erro TLS: \(error)") } })
+                    if count <= 0 { receiveResult = Int32(count); break }
+                    let content = Data(buffer[0..<count])
+                    logWire(connectionID, "WebAgent->client", "data", data: content)
+                    connection.send(content: content, completion: .contentProcessed { error in
+                        if let error {
+                            log("Erro TLS: \(error)")
+                            logWire(connectionID, "WebAgent->client", "tls-write-failed error=\(error)")
+                        }
+                    })
                 }
+                let receiveError = receiveResult < 0 ? errno : 0
+                logWire(connectionID, "WebAgent->client", "end recv-result=\(receiveResult) errno=\(receiveError)")
                 close(socket)
                 connection.cancel()
             }
-        case .failed(let error): log("Erro TLS: \(error)")
+        case .failed(let error):
+            log("Erro TLS: \(error)")
+            logWire(connectionID, "tls", "failed error=\(error)")
+        case .cancelled:
+            logWire(connectionID, "tls", "cancelled")
         default: break
         }
     }
@@ -293,6 +335,11 @@ inet_pton(AF_INET, "127.0.0.1", &address.sin_addr)
 guard withUnsafePointer(to: &address, { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(server, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } }) == 0 else { fatalError("Porta 21021 já está em uso") }
 guard listen(server, 128) == 0 else { fatalError("Não foi possível escutar a porta 21021") }
 FileManager.default.createFile(atPath: logPath, contents: nil)
+FileManager.default.createFile(atPath: wireLogPath, contents: nil)
+if let wireHandle = FileHandle(forWritingAtPath: wireLogPath) {
+    wireHandle.truncateFile(atOffset: 0)
+    wireHandle.closeFile()
+}
 log("Escutando 127.0.0.1:\(listenPort)")
 
 while true {
