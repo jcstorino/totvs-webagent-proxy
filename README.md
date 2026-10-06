@@ -62,8 +62,7 @@ O WebAgent é iniciado sob demanda com `--tray --port 21022 --locallog 1`. Ele p
 ## Instalação automática
 
 ```bash
-./scripts/build.sh
-./scripts/install.sh
+./build-install.sh
 ```
 
 O instalador copia o binário para `/usr/local/bin` e registra o LaunchAgent `com.totvs.webagent-proxy`, que inicia o proxy no login e o mantém aguardando conexões na porta `21021`.
